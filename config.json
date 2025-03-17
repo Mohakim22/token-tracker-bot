@@ -1,0 +1,11 @@
+{
+    "dexscreener_api": "https://api.dexscreener.com/latest/dex/tokens/",
+    "check_interval_seconds": 3600,
+    "filters": {
+        "min_price": 0.001,
+        "max_price": 1000,
+        "min_liquidity": 50000,
+        "min_volume_24h": 10000,
+        "min_liquidity_to_marketcap_ratio": 0.05
+    }
+}
