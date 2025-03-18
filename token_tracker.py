@@ -1,219 +1,116 @@
 import os
-import json
-import aiohttp
-import asyncio
-import logging
-from web3 import Web3
-import aiosqlite
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from binance import AsyncClient as BinanceClient
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import aiohttp
+import sqlite3
 from dotenv import load_dotenv
-from datetime import datetime
 
-# إعداد Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filename='token_tracker.log')
-logger = logging.getLogger(__name__)
+# تحميل المتغيرات البيئية من .env
+load_dotenv()
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# تحميل الـ .env
-load_dotenv("C:/Users/Details Store/OneDrive/Desktop/TokenTracker/.env")
+# إعداد قاعدة بيانات SQLite لتخزين التوكنات
+def init_db():
+    conn = sqlite3.connect("tokens.db")
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS tokens (user_id INTEGER, token_address TEXT)''')
+    conn.commit()
+    conn.close()
 
-# إعدادات
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
-BINANCE_SECRET_KEY = os.getenv('BINANCE_SECRET_KEY')
-INFURA_URL = os.getenv('INFURA_URL')
-AUTHORIZED_USERS = [1128191066]  # الـ User ID بتاعك هنا
+# جلب سعر التوكن (مثال بسيط باستخدام DexScreener API)
+async def get_token_price(token_address):
+    async with aiohttp.ClientSession() as session:
+        url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+        async with session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                if data["pairs"]:
+                    return float(data["pairs"][0]["priceUsd"])
+                return "No price data available"
+            return "Error fetching price"
 
-# التحقق من المتغيرات
-if not all([TELEGRAM_TOKEN, BINANCE_API_KEY, BINANCE_SECRET_KEY, INFURA_URL]):
-    logger.error("بعض المتغيرات البيئية مفقودة!")
-    raise ValueError("يرجى التحقق من ملف .env")
-
-# الاتصال بالخدمات
-w3 = Web3(Web3.HTTPProvider(INFURA_URL))
-binance_client = BinanceClient(BINANCE_API_KEY, BINANCE_SECRET_KEY)
-with open('config.json', 'r') as f:
-    config = json.load(f)
-
-ERC20_ABI = [
-    {"constant": True, "inputs": [], "name": "name", "outputs": [{"name": "", "type": "string"}], "type": "function"},
-    {"constant": True, "inputs": [], "name": "symbol", "outputs": [{"name": "", "type": "string"}], "type": "function"}
-]
-
-# إعداد قاعدة البيانات
-async def init_db():
-    async with aiosqlite.connect('token_tracker.db') as db:
-        await db.execute('''CREATE TABLE IF NOT EXISTS tokens (
-            token_address TEXT PRIMARY KEY, name TEXT, symbol TEXT,
-            price REAL, liquidity REAL, volume_24h REAL, last_updated TIMESTAMP)''')
-        await db.commit()
-    logger.info("تم تهيئة قاعدة البيانات بنجاح")
-
-# فحص التوافق الشرعي
-async def is_sharia_compliant(token_address):
-    try:
-        contract = w3.eth.contract(address=w3.to_checksum_address(token_address), abi=ERC20_ABI)
-        name = contract.functions.name().call().lower()
-        forbidden_keywords = ['casino', 'gambling', 'alcohol', 'porn']
-        return not any(keyword in name for keyword in forbidden_keywords)
-    except Exception as e:
-        logger.error(f"خطأ في فحص التوافق الشرعي لـ {token_address}: {e}")
-        return False
-
-# جلب بيانات التوكن من DexScreener
-async def fetch_token_data(token_address):
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{config['dexscreener_api']}{token_address}") as resp:
-                if resp.status == 200:
-                    return await resp.json()
-                logger.warning(f"فشل جلب بيانات {token_address}: {resp.status}")
-                return {}
-    except Exception as e:
-        logger.error(f"خطأ في جلب بيانات {token_address}: {e}")
-        return {}
-
-# تطبيق الفلاتر
-def meets_criteria(data):
-    filters = config['filters']
-    price = data.get('price', 0)
-    liquidity = data.get('liquidity', 0)
-    volume_24h = data.get('volume_24h', 0)
-    marketcap = data.get('marketcap', 0)
-    return (filters['min_price'] <= price <= filters['max_price'] and
-            liquidity >= filters['min_liquidity'] and
-            volume_24h >= filters['min_volume_24h'] and
-            (marketcap > 0 and liquidity / marketcap >= filters['min_liquidity_to_marketcap_ratio']))
-
-# Telegram Bot
-app = Application.builder().token(TELEGRAM_TOKEN).build()
-
-# واجهة البداية
+# أمر /start مع أزرار
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in AUTHORIZED_USERS:
-        await update.message.reply_text("🚫 غير مصرح لك باستخدام هذا البوت!")
-        return
     keyboard = [
-        [InlineKeyboardButton("➕ إضافة توكن", callback_data='add_token')],
-        [InlineKeyboardButton("📋 عرض التوكنات", callback_data='show_tokens')],
-        [InlineKeyboardButton("⚙️ الإعدادات", callback_data='settings')],
-        [InlineKeyboardButton("📊 تداول يدوي", callback_data='trade')]
+        [InlineKeyboardButton("إضافة توكن", callback_data="add_token")],
+        [InlineKeyboardButton("عرض التوكنات", callback_data="list_tokens")],
+        [InlineKeyboardButton("إيقاف الإشعارات", callback_data="stop_notifications")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "👋 مرحبًا بك في TokenTracker!\n"
-        "⚠️ تنبيه: التداول في العملات الرقمية قد يحمل مخاطر شرعية. استشر عالم دين.\n"
-        "اختر خيارًا من القائمة:",
+        "👋 مرحبًا بك في TokenTracker!\n⚠️ تنبيه: التداول في العملات الرقمية قد يحمل مخاطر شرعية. استشر عالم دين.",
         reply_markup=reply_markup
     )
-    logger.info(f"مستخدم {user_id} بدأ البوت")
 
-# معالجة الأزرار
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# معالجة ضغط الأزرار
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if query.data == 'add_token':
-        await query.edit_message_text("📝 أرسل عنوان التوكن باستخدام: /track <token_address>")
-    elif query.data == 'show_tokens':
-        async with aiosqlite.connect('token_tracker.db') as db:
-            async with db.execute("SELECT token_address, price, symbol FROM tokens") as cursor:
-                tokens = await cursor.fetchall()
-        if tokens:
-            token_list = "\n".join([f"🔹 {t[2]} ({t[0][:10]}...) - ${t[1]:.6f}" for t in tokens])
-            await query.edit_message_text(f"📋 التوكنات المتبعة:\n{token_list}")
+    
+    user_id = query.from_user.id
+    
+    if query.data == "add_token":
+        await query.edit_message_text("أرسل عنوان التوكن (مثل: 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984):")
+        context.user_data["awaiting_token"] = True
+    elif query.data == "list_tokens":
+        conn = sqlite3.connect("tokens.db")
+        c = conn.cursor()
+        c.execute("SELECT token_address FROM tokens WHERE user_id=?", (user_id,))
+        tokens = c.fetchall()
+        conn.close()
+        
+        if not tokens:
+            await query.edit_message_text("لم تقم بإضافة توكنات بعد!")
         else:
-            await query.edit_message_text("❌ لا توجد توكنات متبعة حاليًا.")
-    elif query.data == 'settings':
-        keyboard = [
-            [InlineKeyboardButton("تغيير اللغة", callback_data='lang')],
-            [InlineKeyboardButton("تحديث الفلاتر", callback_data='filters')]
-        ]
-        await query.edit_message_text("⚙️ اختر إعدادًا:", reply_markup=InlineKeyboardMarkup(keyboard))
-    elif query.data == 'trade':
-        await query.edit_message_text("📊 أرسل أمر التداول: /trade <symbol> <side> <quantity>\nمثال: /trade BTCUSDT BUY 0.01")
+            msg = "التوكنات الخاصة بك:\n"
+            for token in tokens:
+                price = await get_token_price(token[0])
+                msg += f"- {token[0]}: ${price}\n"
+            await query.edit_message_text(msg)
+    elif query.data == "stop_notifications":
+        if context.job_queue:
+            context.job_queue.scheduler.remove_all_jobs()
+            await query.edit_message_text("تم إيقاف الإشعارات!")
+        else:
+            await query.edit_message_text("لا توجد إشعارات مفعلة!")
 
-# تتبع توكن
-async def track(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in AUTHORIZED_USERS:
-        await update.message.reply_text("🚫 غير مصرح لك!")
-        return
-    try:
-        token_address = context.args[0]
-        if not w3.is_address(token_address):
-            await update.message.reply_text("❌ عنوان توكن غير صالح!")
-            return
-        if not await is_sharia_compliant(token_address):
-            await update.message.reply_text("⚠️ هذا التوكن غير متوافق مع الشريعة!")
-            return
-        await update_token_data(token_address)
-        await update.message.reply_text(f"✅ تمت إضافة {token_address} بنجاح!")
-        logger.info(f"تمت إضافة {token_address} بواسطة {user_id}")
-    except IndexError:
-        await update.message.reply_text("📝 استخدام خاطئ! اكتب: /track <token_address>")
+# إضافة توكن جديد
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("awaiting_token"):
+        token_address = update.message.text
+        user_id = update.message.from_user.id
+        
+        conn = sqlite3.connect("tokens.db")
+        c = conn.cursor()
+        c.execute("INSERT INTO tokens (user_id, token_address) VALUES (?, ?)", (user_id, token_address))
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text(f"تم إضافة التوكن: {token_address}")
+        context.user_data["awaiting_token"] = False
+        
+        # بدء الإشعارات التلقائية
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(send_price_update, "interval", hours=1, args=(context, user_id, token_address))
+        scheduler.start()
+        context.job_queue.scheduler = scheduler
 
-# تحديث بيانات التوكن
-async def update_token_data(token_address):
-    data = await fetch_token_data(token_address)
-    if meets_criteria(data):
-        async with aiosqlite.connect('token_tracker.db') as db:
-            contract = w3.eth.contract(address=w3.to_checksum_address(token_address), abi=ERC20_ABI)
-            name = contract.functions.name().call()
-            symbol = contract.functions.symbol().call()
-            await db.execute("""
-                INSERT OR REPLACE INTO tokens (token_address, name, symbol, price, liquidity, volume_24h, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (token_address, name, symbol, data.get('price', 0), data.get('liquidity', 0), data.get('volume_24h', 0), datetime.now().isoformat()))
-            await db.commit()
+# إرسال تحديثات الأسعار التلقائية
+async def send_price_update(context: ContextTypes.DEFAULT_TYPE, user_id: int, token_address: str):
+    price = await get_token_price(token_address)
+    await context.bot.send_message(chat_id=user_id, text=f"تحديث سعر {token_address}: ${price}")
 
-# تداول يدوي
-async def trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in AUTHORIZED_USERS:
-        await update.message.reply_text("🚫 غير مصرح لك!")
-        return
-    try:
-        symbol, side, quantity = context.args[0].upper(), context.args[1].upper(), float(context.args[2])
-        order = await binance_client.create_order(symbol=symbol, side=side, type='MARKET', quantity=quantity)
-        await update.message.reply_text(f"📊 تم تنفيذ الأمر: {order['side']} {order['executedQty']} {symbol}")
-        logger.info(f"تم تنفيذ أمر تداول: {symbol} {side} {quantity} بواسطة {user_id}")
-    except Exception as e:
-        await update.message.reply_text(f"❌ خطأ في التداول: {str(e)}")
-        logger.error(f"خطأ في التداول: {e}")
-
-# تتبع التوكنات دوريًا
-async def track_tokens(application):
-    while True:
-        try:
-            async with aiosqlite.connect('token_tracker.db') as db:
-                async with db.execute("SELECT token_address FROM tokens") as cursor:
-                    tokens = await cursor.fetchall()
-                for (token_address,) in tokens:
-                    await update_token_data(token_address)
-            logger.info("تم تحديث بيانات التوكنات")
-        except Exception as e:
-            logger.error(f"خطأ في تتبع التوكنات: {e}")
-        await asyncio.sleep(config['check_interval_seconds'])
-
-# التشغيل الرئيسي
+# التشغيل
 def main():
-    # تهيئة قاعدة البيانات
-    asyncio.get_event_loop().run_until_complete(init_db())
-
-    # إضافة المعالجات
+    init_db()
+    app = Application.builder().token(TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("track", track))
-    app.add_handler(CommandHandler("trade", trade))
-    app.add_handler(CallbackQueryHandler(button_handler))
-
-    # بدء تتبع التوكنات في الخلفية
-    app.job_queue.run_repeating(track_tokens, interval=config['check_interval_seconds'], first=0)
-
-    # تشغيل البوت
-    logger.info("البوت بدأ يعمل!")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(MessageHandler(None, handle_message))
+    
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
