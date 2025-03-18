@@ -4,9 +4,12 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import aiohttp
 import sqlite3
+import asyncio
 
 # التوكن من المتغيرات البيئية
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# عنوان URL بتاع Render (هيتحدد تلقائيًا)
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://token-tracker-bot-worker.onrender.com/webhook")
 
 # إعداد قاعدة بيانات SQLite
 def init_db():
@@ -74,7 +77,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # إضافة توكن جديد
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_token"):
-        token_address = update.message.text  # هنا بنحفظ أي نص، بس السعر هيكون لـ ISLM
+        token_address = update.message.text
         user_id = update.message.from_user.id
         
         conn = sqlite3.connect("tokens.db")
@@ -97,8 +100,12 @@ async def send_price_update(context: ContextTypes.DEFAULT_TYPE, user_id: int, to
     price = await get_token_price(token_address)
     await context.bot.send_message(chat_id=user_id, text=f"تحديث سعر Islamic Coin (ISLM): ${price}")
 
+# Webhook Handler
+async def webhook(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.application.process_update(update)
+
 # التشغيل
-def main():
+async def main():
     init_db()
     app = Application.builder().token(TOKEN).build()
     
@@ -106,7 +113,17 @@ def main():
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    app.run_polling()
+    # إعداد Webhook
+    await app.bot.set_webhook(url=WEBHOOK_URL)
+    app.add_handler(webhook)
+    
+    # تشغيل الـ Webhook على Port 8000
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=8000,
+        url_path="/webhook",
+        webhook_url=WEBHOOK_URL
+    )
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
