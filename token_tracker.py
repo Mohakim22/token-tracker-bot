@@ -1,16 +1,16 @@
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import aiohttp
 import sqlite3
 from dotenv import load_dotenv
 
-# تحميل المتغيرات البيئية من .env
-load_dotenv()
+# تحميل المتغيرات البيئية (اختياري على Render)
+load_dotenv()  # لو بتشتغل محليًا، تأكد إن .env موجود
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# إعداد قاعدة بيانات SQLite لتخزين التوكنات
+# إعداد قاعدة بيانات SQLite
 def init_db():
     conn = sqlite3.connect("tokens.db")
     c = conn.cursor()
@@ -18,7 +18,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# جلب سعر التوكن (مثال بسيط باستخدام DexScreener API)
+# جلب سعر التوكن من DexScreener
 async def get_token_price(token_address):
     async with aiohttp.ClientSession() as session:
         url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
@@ -69,7 +69,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += f"- {token[0]}: ${price}\n"
             await query.edit_message_text(msg)
     elif query.data == "stop_notifications":
-        if context.job_queue:
+        if context.job_queue and context.job_queue.scheduler:
             context.job_queue.scheduler.remove_all_jobs()
             await query.edit_message_text("تم إيقاف الإشعارات!")
         else:
@@ -96,7 +96,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         scheduler.start()
         context.job_queue.scheduler = scheduler
 
-# إرسال تحديثات الأسعار التلقائية
+# إرسال تحديثات الأسعار
 async def send_price_update(context: ContextTypes.DEFAULT_TYPE, user_id: int, token_address: str):
     price = await get_token_price(token_address)
     await context.bot.send_message(chat_id=user_id, text=f"تحديث سعر {token_address}: ${price}")
@@ -108,7 +108,7 @@ def main():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(MessageHandler(None, handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     app.run_polling()
 
