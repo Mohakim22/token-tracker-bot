@@ -8,7 +8,7 @@ import asyncio
 
 # التوكن من المتغيرات البيئية
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-# عنوان URL بتاع Render (هيتحدد تلقائيًا)
+# عنوان URL بتاع Render
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://token-tracker-bot-worker.onrender.com/webhook")
 
 # إعداد قاعدة بيانات SQLite
