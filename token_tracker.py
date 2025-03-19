@@ -20,6 +20,7 @@ logger.info(f"البورت: {PORT}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("وصل أمر /start من المستخدم!")
+    logger.info(f"Update JSON: {update.to_json()}")
     keyboard = [
         [InlineKeyboardButton("إضافة توكن", callback_data="add_token")],
         [InlineKeyboardButton("عرض التوكنات", callback_data="list_tokens")]
@@ -44,15 +45,21 @@ async def setup_application():
         raise
 
 async def webhook_handler(request):
-    logger.info("وصل طلب Webhook!")
+    logger.info("وصل طلب Webhook إلى المسار: %s", request.path)
+    logger.info("طريقة الطلب: %s", request.method)
     app = request.app["telegram_app"]
     try:
         update = Update.de_json(await request.json(), app.bot)
+        logger.info(f"Update JSON: {update.to_json()}")
         await app.process_update(update)
         return web.Response(text="OK")
     except Exception as e:
         logger.error(f"خطأ في معالجة الـ Webhook: {str(e)}")
         return web.Response(status=500)
+
+async def test_handler(request):
+    logger.info("وصل طلب إلى /test!")
+    return web.Response(text="Test OK")
 
 async def main():
     logger.info("دخلنا الدالة الرئيسية...")
@@ -62,6 +69,7 @@ async def main():
         web_app = web.Application()
         web_app["telegram_app"] = telegram_app
         web_app.router.add_post("/webhook", webhook_handler)
+        web_app.router.add_get("/test", test_handler)  # مسار اختبار جديد
         
         logger.info(f"جاري تشغيل السيرفر على بورت {PORT}...")
         runner = web.AppRunner(web_app)
