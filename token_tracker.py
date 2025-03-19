@@ -5,7 +5,6 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from aiohttp import web
 
-# إعداد التسجيل
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -61,6 +60,10 @@ async def test_handler(request):
     logger.info("وصل طلب إلى /test!")
     return web.Response(text="Test OK")
 
+async def root_handler(request):
+    logger.info("وصل طلب إلى المسار الجذر /")
+    return web.Response(text="Root OK")
+
 async def main():
     logger.info("دخلنا الدالة الرئيسية...")
     try:
@@ -69,7 +72,8 @@ async def main():
         web_app = web.Application()
         web_app["telegram_app"] = telegram_app
         web_app.router.add_post("/webhook", webhook_handler)
-        web_app.router.add_get("/test", test_handler)  # مسار اختبار جديد
+        web_app.router.add_get("/test", test_handler)
+        web_app.router.add_get("/", root_handler)  # مسار جديد
         
         logger.info(f"جاري تشغيل السيرفر على بورت {PORT}...")
         runner = web.AppRunner(web_app)
