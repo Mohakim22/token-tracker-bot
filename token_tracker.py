@@ -20,7 +20,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("عرض التوكنات", callback_data="list_tokens")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("مرحبًا بك في TokenTrackerBotV2!", reply_markup=reply_markup)
+    await update.message.reply_text("مرحبًا بك في TokenTrackerBot!", reply_markup=reply_markup)
 
 async def setup_application():
     print("جاري إعداد تطبيق تيليجرام...")
