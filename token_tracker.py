@@ -8,7 +8,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://token-tracker-bot-worker.onrender.com/webhook")
 PORT = int(os.getenv("PORT", 8000))
 
-print(f"بدأ تشغيل البوت...")
+print("بدأ تشغيل السكربت!")
 print(f"التوكن: {TOKEN}")
 print(f"رابط الـ Webhook: {WEBHOOK_URL}")
 print(f"البورت: {PORT}")
@@ -59,5 +59,5 @@ async def main():
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    print("بدأ تشغيل السكربت!")
+    print("بدأ تشغيل السكربت الرئيسي!")
     asyncio.run(main())
