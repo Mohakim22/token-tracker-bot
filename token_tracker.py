@@ -1,5 +1,5 @@
 import os
-import asyncio  # أضفنا الـ import هنا
+import asyncio  # لازم يكون موجود هنا
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
