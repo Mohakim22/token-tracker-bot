@@ -100,22 +100,20 @@ async def send_price_update(context: ContextTypes.DEFAULT_TYPE, user_id: int, to
     price = await get_token_price(token_address)
     await context.bot.send_message(chat_id=user_id, text=f"تحديث سعر Islamic Coin (ISLM): ${price}")
 
-# Webhook Handler
-async def webhook(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.application.process_update(update)
-
 # التشغيل
 async def main():
     init_db()
     app = Application.builder().token(TOKEN).build()
     
+    # إضافة Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # إعداد Webhook
+    # حذف الـ Webhook القديم لو موجود
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    # إعداد الـ Webhook الجديد
     await app.bot.set_webhook(url=WEBHOOK_URL)
-    app.add_handler(webhook)
     
     # تشغيل الـ Webhook على Port 8000
     await app.run_webhook(
