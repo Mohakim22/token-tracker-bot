@@ -1,6 +1,7 @@
 import os
 import asyncio
-from telegram.ext import Application
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from aiohttp import web
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -12,6 +13,15 @@ print(f"التوكن: {TOKEN}")
 print(f"رابط الـ Webhook: {WEBHOOK_URL}")
 print(f"البورت: {PORT}")
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("وصل أمر /start من المستخدم!")
+    keyboard = [
+        [InlineKeyboardButton("إضافة توكن", callback_data="add_token")],
+        [InlineKeyboardButton("عرض التوكنات", callback_data="list_tokens")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("مرحبًا بك في TokenTrackerBotV2!", reply_markup=reply_markup)
+
 async def setup_application():
     print("جاري إعداد تطبيق تيليجرام...")
     app = Application.builder().token(TOKEN).build()
@@ -20,12 +30,14 @@ async def setup_application():
     print("جاري إعداد الـ Webhook الجديد...")
     await app.bot.set_webhook(url=WEBHOOK_URL)
     print("تم إعداد الـ Webhook بنجاح!")
+    
+    app.add_handler(CommandHandler("start", start))
     return app
 
 async def webhook_handler(request):
     print("وصل طلب Webhook!")
     app = request.app["telegram_app"]
-    update = await request.json()
+    update = Update.de_json(await request.json(), app.bot)
     await app.process_update(update)
     return web.Response(text="OK")
 
