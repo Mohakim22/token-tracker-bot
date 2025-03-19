@@ -6,6 +6,7 @@ from aiohttp import web
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://token-tracker-bot-worker.onrender.com/webhook")
 PORT = int(os.getenv("PORT", 8000))
+print(f"البورت: {PORT}")
 
 print(f"بدأ تشغيل البوت...")
 print(f"التوكن: {TOKEN}")
