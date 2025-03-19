@@ -4,12 +4,13 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import aiohttp
 import sqlite3
-import asyncio
+from aiohttp import web
+import json
 
 # التوكن من المتغيرات البيئية
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-# عنوان URL بتاع Render
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://token-tracker-bot-worker.onrender.com/webhook")
+PORT = int(os.getenv("PORT", 8000))
 
 # إعداد قاعدة بيانات SQLite
 def init_db():
@@ -100,8 +101,15 @@ async def send_price_update(context: ContextTypes.DEFAULT_TYPE, user_id: int, to
     price = await get_token_price(token_address)
     await context.bot.send_message(chat_id=user_id, text=f"تحديث سعر Islamic Coin (ISLM): ${price}")
 
-# التشغيل
-async def main():
+# معالجة الـ Webhook
+async def webhook_handler(request):
+    app = request.app["telegram_app"]
+    update = Update.de_json(json.loads(await request.text()), app.bot)
+    await app.process_update(update)
+    return web.Response(text="OK")
+
+# إعداد التطبيق
+async def setup_application():
     init_db()
     app = Application.builder().token(TOKEN).build()
     
@@ -110,18 +118,31 @@ async def main():
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # حذف الـ Webhook القديم لو موجود
+    # حذف الـ Webhook القديم وإعداد الجديد
     await app.bot.delete_webhook(drop_pending_updates=True)
-    # إعداد الـ Webhook الجديد
     await app.bot.set_webhook(url=WEBHOOK_URL)
     
-    # تشغيل الـ Webhook على Port 8000
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=8000,
-        url_path="/webhook",
-        webhook_url=WEBHOOK_URL
-    )
+    return app
+
+# تشغيل الـ Webhook Server
+async def main():
+    # إعداد التطبيق
+    telegram_app = await setup_application()
+    
+    # إعداد Web Server باستخدام aiohttp
+    web_app = web.Application()
+    web_app["telegram_app"] = telegram_app
+    web_app.router.add_post("/webhook", webhook_handler)
+    
+    # تشغيل الـ Web Server
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    
+    # الحفاظ على البرنامج شغال
+    print(f"Webhook server running on port {PORT}")
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
