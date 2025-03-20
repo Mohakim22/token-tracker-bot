@@ -1,4 +1,5 @@
 import os
+import asyncio
 import logging
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -46,7 +47,6 @@ web_app.router.add_route("*", "/", webhook_handler)
 # تشغيل التطبيق
 if __name__ == "__main__":
     logger.info("بدأ تشغيل السكربت!")
-    import asyncio
     asyncio.run(setup_application())
     web.run_app(web_app, host="0.0.0.0", port=PORT)
 else:
