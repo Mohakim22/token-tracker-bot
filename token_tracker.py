@@ -64,16 +64,29 @@ async def root_handler(request):
     logger.info("وصل طلب إلى المسار الجذر /")
     return web.Response(text="Root OK")
 
+async def not_found_handler(request):
+    logger.info(f"طلب غير موجود: {request.method} {request.path}")
+    return web.Response(text="Not Found", status=404)
+
+async def log_requests_middleware(app, handler):
+    async def middleware_handler(request):
+        logger.info(f"وصل طلب خارجي: {request.method} {request.path}")
+        response = await handler(request)
+        logger.info(f"رد السيرفر: {response.status}")
+        return response
+    return middleware_handler
+
 async def main():
     logger.info("دخلنا الدالة الرئيسية...")
     try:
         telegram_app = await setup_application()
         
-        web_app = web.Application()
+        web_app = web.Application(middlewares=[log_requests_middleware])
         web_app["telegram_app"] = telegram_app
         web_app.router.add_post("/webhook", webhook_handler)
         web_app.router.add_get("/test", test_handler)
-        web_app.router.add_get("/", root_handler)  # مسار جديد
+        web_app.router.add_get("/", root_handler)
+        web_app.router.add_route("*", "/{path:.*}", not_found_handler)  # لأي مسار غير معرف
         
         logger.info(f"جاري تشغيل السيرفر على بورت {PORT}...")
         runner = web.AppRunner(web_app)
