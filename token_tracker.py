@@ -8,8 +8,8 @@ from aiohttp import web
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://token-tracker-bot-worker.onrender.com/webhook")
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7587320592:AAEE6LXgBjIhv7TsfAspZzI4U_RjY2jeaok")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://token-tracker-bot-worker.onrender.com/")
 PORT = int(os.getenv("PORT", 10000))
 
 logger.info("بدأ تشغيل السكربت!")
@@ -47,26 +47,16 @@ async def webhook_handler(request):
     logger.info("وصل طلب Webhook إلى المسار: %s", request.path)
     logger.info("طريقة الطلب: %s", request.method)
     app = request.app["telegram_app"]
-    try:
-        update = Update.de_json(await request.json(), app.bot)
-        logger.info(f"Update JSON: {update.to_json()}")
-        await app.process_update(update)
-        return web.Response(text="OK")
-    except Exception as e:
-        logger.error(f"خطأ في معالجة الـ Webhook: {str(e)}")
-        return web.Response(status=500)
-
-async def test_handler(request):
-    logger.info("وصل طلب إلى /test!")
-    return web.Response(text="Test OK")
-
-async def root_handler(request):
-    logger.info("وصل طلب إلى المسار الجذر /")
+    if request.method == "POST":
+        try:
+            update = Update.de_json(await request.json(), app.bot)
+            logger.info(f"Update JSON: {update.to_json()}")
+            await app.process_update(update)
+            return web.Response(text="OK")
+        except Exception as e:
+            logger.error(f"خطأ في معالجة الـ Webhook: {str(e)}")
+            return web.Response(status=500)
     return web.Response(text="Root OK")
-
-async def not_found_handler(request):
-    logger.info(f"طلب غير موجود: {request.method} {request.path}")
-    return web.Response(text="Not Found", status=404)
 
 async def log_requests_middleware(app, handler):
     async def middleware_handler(request):
@@ -83,10 +73,7 @@ async def main():
         
         web_app = web.Application(middlewares=[log_requests_middleware])
         web_app["telegram_app"] = telegram_app
-        web_app.router.add_post("/webhook", webhook_handler)
-        web_app.router.add_get("/test", test_handler)
-        web_app.router.add_get("/", root_handler)
-        web_app.router.add_route("*", "/{path:.*}", not_found_handler)  # لأي مسار غير معرف
+        web_app.router.add_route("*", "/", webhook_handler)
         
         logger.info(f"جاري تشغيل السيرفر على بورت {PORT}...")
         runner = web.AppRunner(web_app)
